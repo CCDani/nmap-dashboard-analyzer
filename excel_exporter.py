@@ -1,6 +1,3 @@
-# Guarda esto como:
-# D:\Daniel\Desktop\Dashboard-active-inventory\excel_exporter.py
-
 import pandas as pd
 from pandas import ExcelWriter
 from openpyxl import load_workbook
@@ -156,4 +153,5 @@ def create_report(hosts_data, xlsx_file_name):
         _generate_styled_excel(df, xlsx_file_name)
         return True, None # (Éxito, Sin Error)
     except Exception as e:
+
         return False, str(e) # (Fallo, Mensaje de Error)
