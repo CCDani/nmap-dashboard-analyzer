@@ -88,7 +88,7 @@ Una vez que el proyecto está completo y todas las dependencias están instalada
 Este comando incluye todas las optimizaciones necesarias para aplicaciones de interfaz gráfica (GUI):Bash(env) 
 
 ```bash
-pyinstaller --onefile --windowed --icon=C:\ruta\a\tu\icono\nmap-dashboard-analyzer\ico.ico Dashboard.py
+pyinstaller --onefile --windowed --icon=ico.ico Dashboard.py
 ```
 ### 2. 📋 Resumen de las Opciones
 
@@ -102,3 +102,4 @@ pyinstaller --onefile --windowed --icon=C:\ruta\a\tu\icono\nmap-dashboard-analyz
 
 
 ### 3. Ubicación del ArchivoDespués de ejecutar el comando, el archivo ejecutable final (Dashboard.exe) se encontrará dentro de la carpeta dist/ en el directorio de tu proyecto.
+
