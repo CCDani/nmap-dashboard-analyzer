@@ -21,21 +21,6 @@ def get_cvss_rating(score_str):
         return "Desconocida"
     return "Desconocida"
 
-def replace_substring(test_str, s1, s2):
-    """Función de ayuda para reemplazar texto."""
-    if test_str is None:
-        return ""
-    result = ""
-    i = 0
-    while i < len(test_str):
-        if test_str[i:i+len(s1)] == s1:
-            result += s2
-            i += len(s1)
-        else:
-            result += test_str[i]
-            i += 1
-    return result
-
 def _generate_styled_excel(df, excel_file_name):
     """Función interna para crear y formatear el archivo Excel."""
     with ExcelWriter(excel_file_name, engine='openpyxl') as writer:
@@ -72,8 +57,6 @@ def _generate_styled_excel(df, excel_file_name):
             else:
                 cell.alignment = cell_alignment
             
-            # Puedes cambiar este color de fondo si prefieres
-            # cell.fill = PatternFill(start_color='eeeeee', end_color='eeeeee', fill_type='solid') 
             cell.font = cell_font
             cell.border = thin_border
 
@@ -86,9 +69,8 @@ def _generate_styled_excel(df, excel_file_name):
                 max_lines = max(max_lines, cell_value.count('\n') + 1)
         ws.row_dimensions[row_idx].height = 15 * max_lines
 
-
     # Definir anchos de columna
-    widths = [25, 50, 120] # IP, Puertos, Vulnerabilidades
+    widths = [25, 60, 120] # IP, Puertos, Vulnerabilidades
     for i, col_letter in enumerate(['A', 'B', 'C']):
         if i < len(widths):
             ws.column_dimensions[col_letter].width = widths[i]
@@ -110,29 +92,46 @@ def create_report(hosts_data, xlsx_file_name):
 
         ips.append(host_info['ip'])
         
-        # Formatear Puertos
-        for port, service in host_info['ports']:
-            ports_servs.append(f" - Port: {port}, Service: {service}")   
+        # --- CORRECCIÓN AQUÍ: Desempaquetar 4 valores ---
+        for port, service, product, version in host_info['ports']:
+            
+            # Crear string con detalles (ej: "ssh (OpenSSH 8.2)")
+            service_detail = service
+            if product:
+                service_detail += f" ({product}"
+                if version:
+                    service_detail += f" {version})"
+                else:
+                    service_detail += ")"
+            
+            ports_servs.append(f" - Port: {port}, Service: {service_detail}")   
+        # -----------------------------------------------
+
         ports_services.append("\n".join(ports_servs))
 
         # Formatear Vulnerabilidades
-        # Ordenar por criticidad (opcional, pero recomendado)
         sorted_vulns = sorted(host_info['vulnerabilities'], key=lambda v: float(v['cvss']) if v['cvss'].replace('.', '', 1).isdigit() else 0.0, reverse=True)
 
         for vuln in sorted_vulns:
-            formated_references = '\n\t'.join(vuln.get('references', []))
+            # Formatear referencias (limitar a 3 para no saturar celda)
+            refs = vuln.get('references', [])
+            formated_references = '\n\t'.join(refs[:3]) if refs else "N/A"
             
             cvss_score = vuln['cvss']
-            cvss_rating = get_cvss_rating(cvss_score) # Usa la función de este archivo
+            cvss_rating = get_cvss_rating(cvss_score)
+            
+            # Extraer nuevos campos con valores por defecto
+            description = vuln.get('description', 'N/A')
+            if description is None: description = "N/A"
+            # Limpiar descripción muy larga para Excel
+            description = description[:300] + "..." if len(description) > 300 else description
 
-            v =  f" - Port: {vuln['port']}, Service: {vuln['service']}\n"
+            v =  f" - Port: {vuln['port']} ({vuln['service']})\n"
             v += f"   Name: {vuln['name']}\n"
             v += f"   Criticidad: {cvss_score} ({cvss_rating})\n"
             v += f"   CVEs: {', '.join(vuln['cve'])}\n"
+            v += f"   Description: {description}\n"
             v += f"   References: \n\t{formated_references}\n"
-            # Puedes añadir descripción y fecha si quieres, como en tu script original
-            # description = replace_substring(vuln.get('description', 'N/A'), "\n", "\n\t")
-            # v += f"   Description:\n\t{description}\n"
 
             vuls.append(v)
         
@@ -151,6 +150,6 @@ def create_report(hosts_data, xlsx_file_name):
 
     try:
         _generate_styled_excel(df, xlsx_file_name)
-        return True, None # (Éxito, Sin Error)
+        return True, None 
     except Exception as e:
-        return False, str(e) # (Fallo, Mensaje de Error)
+        return False, str(e)
