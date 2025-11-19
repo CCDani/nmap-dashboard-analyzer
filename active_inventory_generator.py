@@ -45,7 +45,7 @@ def get_info_vuln(node, port="unknown", service="unknown"):
     title_node = elem.find(".//elem[@key='title']")
     state_node = elem.find(".//elem[@key='state']")
     
-    # --- INICIO: NUEVOS CAMPOS PARA EXCEL ---
+    # --- CAMPOS PARA EXCEL ---
     desc_node = elem.find(".//table[@key='description']/elem")
     description = desc_node.text if desc_node is not None else "N/A"
     
@@ -56,7 +56,6 @@ def get_info_vuln(node, port="unknown", service="unknown"):
     refs_table = elem.find(".//table[@key='refs']")
     if refs_table is not None:
         references = [e.text for e in refs_table.findall('elem') if e.text]
-    # --- FIN: NUEVOS CAMPOS PARA EXCEL ---
     
     if title_node is None or state_node is None:
         return [] 
@@ -86,24 +85,32 @@ def extract_host_info(host):
     # --- Extraer Puertos y Vulnerabilidades por puerto ---
     for port in host.find('ports').findall('port'):
         if "open" == port.find('state').attrib.get('state'):          
-            
-            # --- ¡AQUÍ ESTÁ LA CORRECCIÓN! ---
-            # Cambiado de 'portId' a 'portid' (todo minúsculas)
             port_id = port.attrib['portid']
-            # --- FIN DE LA CORRECCIÓN ---
-
             service_node = port.find('service')
+            
             service = service_node.attrib.get('name', 'unknown') if service_node is not None else 'unknown'
-            ports.append((port_id, service))
+            # Extraer Product y Version
+            product = service_node.attrib.get('product', '') if service_node is not None else ''
+            version = service_node.attrib.get('version', '') if service_node is not None else ''
 
+            # Almacenamos 4 elementos: (port_id, service, product, version)
+            ports.append((port_id, service, product, version))
+
+            # Cadena rica para pasar a la funcion de vulnerabilidades
+            rich_service_display = service
+            if product:
+                rich_service_display += f" ({product}"
+                if version:
+                    rich_service_display += f" {version})"
+                else:
+                    rich_service_display += ")"
+            
             for script in port.findall('script'):
                 if 'vulnerable' in script.attrib['output'].lower() or 'vulners' in script.attrib['id']:
-                    vulnerabilities.extend(get_info_vuln(script, port_id, service))
+                    vulnerabilities.extend(get_info_vuln(script, port_id, rich_service_display))
                     
     # --- Extraer SO ---
     os_match = host.find(".//osmatch")
-    
-    # Usamos el nombre completo del SO, tal como lo detecta Nmap.
     os_name = os_match.attrib.get('name', 'Desconocido') if os_match is not None else 'Desconocido'
 
     return ip, os_name, ports, vulnerabilities
@@ -115,51 +122,38 @@ def parse_nmap_xml(xml_file):
     tree = ET.parse(xml_file)
     root = tree.getroot()
 
-    # --- Extraer comando Nmap ---
     nmap_command = root.attrib.get('args', 'Comando no encontrado')
 
-    # --- Contadores para el dashboard ---
-    hosts_data = [] # Para la tabla
+    hosts_data = [] 
     os_families = {}
-    
-    # --- ¡CAMBIO AQUÍ! ---
-    # Ya no usamos 'set()', usamos contadores numéricos
+    all_service_names = set() 
+    all_ports_ids = set()
     total_open_ports = 0
     total_running_services = 0
-    # --- FIN DEL CAMBIO ---
     
     cve_counts = {"Critical": 0, "High": 0, "Medium": 0, "Low": 0, "None": 0, "Unknown": 0}
 
-    # --- Procesar cada host ---
     for host in root.findall('host'):
         ip, os_name, ports, vulnerabilities = extract_host_info(host)
         
-        # Actualizar contadores
         os_families[os_name] = os_families.get(os_name, 0) + 1
         
-        # --- ¡CAMBIO AQUÍ! ---
-        # Sumamos la cantidad de puertos/servicios de ESTE host al total
-        # 'ports' es una lista, así que len(ports) es el número de puertos abiertos
         total_open_ports += len(ports)
-        total_running_services += len(ports) # Es el mismo número
-        # --- FIN DEL CAMBIO ---
+        total_running_services += len(ports) 
 
         max_cvss_score = 0.0
         for vuln in vulnerabilities:
-            # Contar CVEs por criticidad
             rating, color = get_cvss_rating_and_color(vuln['cvss'])
             cve_counts[rating] += 1
             
-            # Encontrar la criticidad máxima para este host
             try:
                 max_cvss_score = max(max_cvss_score, float(vuln['cvss']))
             except (ValueError, TypeError):
                 continue
         
-        # Ya no necesitamos este bucle, porque sumamos los puertos arriba
-        # for port, service in ports:
-        #    all_ports.add(port)
-        #    all_services.add(service)
+        for port_id, service_name, product, version in ports:
+            all_ports_ids.add(port_id)
+            all_service_names.add(service_name)
 
         hosts_data.append({
             'ip': ip,
@@ -169,18 +163,14 @@ def parse_nmap_xml(xml_file):
             'max_cvss': max_cvss_score
         })
 
-    # --- Empaquetar resultados del dashboard ---
     summary_data = {
         "nmap_command": nmap_command,
         "scanned_assets": len(hosts_data),
-        "os_families": os_families,
-        
-        # --- ¡CAMBIO AQUÍ! ---
-        "services": total_running_services,
+        "services": total_running_services, 
         "ports": total_open_ports,
-        # --- FIN DEL CAMBIO ---
-        
-        "cve_counts": cve_counts
+        "unique_services": all_service_names,
+        "cve_counts": cve_counts,
+        "os_families": os_families # <-- ¡ESTA ES LA LÍNEA QUE FALTABA!
     }
 
     return summary_data, hosts_data
